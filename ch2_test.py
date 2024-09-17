@@ -1,3 +1,4 @@
+# CHAPTER 2. Elliptic Curve
 from ecc import Point
 p1 = Point(-1,-1, 5, 7)
 

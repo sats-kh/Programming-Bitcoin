@@ -1,3 +1,4 @@
+# CHAPTER 4. Serialization
 from ecc import S256Point, Signature, PrivateKey
 # Quiz 4.1
 p = PrivateKey(5000).point
@@ -67,7 +68,7 @@ def int_to_little_endian(n, length):
 
 # Quiz 4.9
 from helper import hash256
-passphrase = b'kwanhoon@snu.ac.kr-my_secret'
+passphrase = b'kwan hoon secret'
 secret = little_endian_to_int(hash256(passphrase))
 p = PrivateKey(secret)
 p.point.address(testnet=True)

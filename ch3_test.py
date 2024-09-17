@@ -1,6 +1,6 @@
-# Quiz 3.1
+# CHAPTER 3. Elliptic Curve Digital Signature Algorithm
 from ecc import FieldElement, Point, S256Field
-
+# Quiz 3.1
 prime = 223
 a = FieldElement(0, prime)
 b = FieldElement(7, prime)

@@ -1,6 +1,9 @@
 from unittest import TestCase
+from io import BytesIO
 from random import randint
-from helper import hash160, encode_base58_checksum
+from helper import hash160, hash256, encode_base58_checksum, little_endian_to_int
+import hashlib
+import hmac
 
 class FieldElement:
     def __init__(self, num, prime):
@@ -212,6 +215,17 @@ class S256Point(Point):
         else:
             return S256Point(x, odd_beta)
 
+    def verify(self, z, sig):
+        # By Fermat's Little Theorem, 1/s = pow(s, N-2, N)
+        s_inv = pow(sig.s, N - 2, N)
+        # u = z / s
+        u = z * s_inv % N
+        # v = r / s
+        v = sig.r * s_inv % N
+        # u*G + v*P should have as the x coordinate, r
+        total = u * G + v * self
+        return total.x.num == sig.r
+
 class ECCTest(TestCase):
 
     def test_on_curve(self):
@@ -259,7 +273,7 @@ class Signature:
     def __repr__(self):
         return 'Signature({:x}, {:x})'.format(self.r, self.s)
 
-    def verfy(self, z, sig):
+    def verify(self, z, sig):
         s_inv = pow(sig.s, N - 2, N)
         u = z * s_inv % N
         v = sig.r * s_inv % N
@@ -281,6 +295,29 @@ class Signature:
         result += bytes([2, len(sbin)]) + sbin
         return bytes([0x30, len(result)]) + result
 
+    @classmethod
+    def parse(cls, signature_bin):
+        s = BytesIO(signature_bin)
+        compound = s.read(1)[0]
+        if compound != 0x30:
+            raise SyntaxError("Bad Signature")
+        length = s.read(1)[0]
+        if length + 2 != len(signature_bin):
+            raise SyntaxError("Bad Signature Length")
+        marker = s.read(1)[0]
+        if marker != 0x02:
+            raise SyntaxError("Bad Signature")
+        rlength = s.read(1)[0]
+        r = int.from_bytes(s.read(rlength), 'big')
+        marker = s.read(1)[0]
+        if marker != 0x02:
+            raise SyntaxError("Bad Signature")
+        slength = s.read(1)[0]
+        s = int.from_bytes(s.read(slength), 'big')
+        if len(signature_bin) != 6 + rlength + slength:
+            raise SyntaxError("Signature too long")
+        return cls(r, s)
+
 
 class PrivateKey:
     def __init__(self, secret):
@@ -291,7 +328,7 @@ class PrivateKey:
         return '{x}'.format(self.secret).zfill(64)
 
     def sign(self, z):
-        k = randint(0, N)
+        k = self.deterministic_k(z)
         r = (k*G).x.num
         k_inv = pow(k, N-2,N)
         s = (z + r*self.secret) * k_inv % N
@@ -311,4 +348,27 @@ class PrivateKey:
             suffix = b''
         return encode_base58_checksum(prefix + secret_bytes + suffix)
 
+    def deterministic_k(self, z):
+        k = b'\x00' * 32
+        v = b'\x01' * 32
+        if z > N:
+            z -= N
+        z_bytes = z.to_bytes(32, 'big')
+        secret_bytes = self.secret.to_bytes(32, 'big')
+        s256 = hashlib.sha256
+        k = hmac.new(k, v + b'\x00' + secret_bytes + z_bytes, s256).digest()
+        v = hmac.new(k, v, s256).digest()
+        k = hmac.new(k, v + b'\x01' + secret_bytes + z_bytes, s256).digest()
+        v = hmac.new(k, v, s256).digest()
+        while True:
+            v = hmac.new(k, v, s256).digest()
+            candidate = int.from_bytes(v, 'big')
+            if candidate >= 1 and candidate < N:
+                return candidate
+            k = hmac.new(k, v + b'\x00', s256).digest()
+            v = hmac.new(k, v, s256).digest()
 
+
+    # def parse(cls, serialization):
+    #     version = serialization[0:4]
+    #
